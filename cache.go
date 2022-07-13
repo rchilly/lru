@@ -1,12 +1,15 @@
 package lru
 
 import (
+	"fmt"
+
 	"github.com/rchilly/lru/internal"
 )
 
 type Entry interface {
 	Key() string
 	Size() uint64
+	Value() interface{}
 }
 
 type entry struct {
@@ -23,13 +26,23 @@ type Cache struct {
 	size, maxSize uint64
 }
 
-func NewCache(maxEntries, maxSize uint64) *Cache {
+func (c Cache) String() string {
+	return fmt.Sprintf(
+		"\nsize: %d\nhead: %s\ntail: %s\n",
+		c.size,
+		c.head.Key(),
+		c.tail.Key(),
+	)
+}
+
+func NewCache(maxSize uint64) *Cache {
 	return &Cache{
-		entries: make(map[string]entry, maxSize),
+		entries: make(map[string]entry),
+		maxSize: maxSize,
 	}
 }
 
-func (c *Cache) Get(key string) (Entry, bool) {
+func (c *Cache) Get(key string) (interface{}, bool) {
 	e, ok := c.entries[key]
 	if !ok {
 		return nil, false
@@ -37,7 +50,11 @@ func (c *Cache) Get(key string) (Entry, bool) {
 
 	c.head = c.head.SawAgain(e.seen)
 
-	return e, true
+	if c.tail == e.seen {
+		c.tail = e.seen.After()
+	}
+
+	return e.Value(), true
 }
 
 func (c *Cache) Add(e Entry) {
@@ -57,6 +74,7 @@ func (c *Cache) Add(e Entry) {
 		}
 
 		c.size -= rm.Size()
+		delete(c.entries, tail.Key())
 	}
 
 	seen := c.head.Saw(e.Key())
@@ -67,4 +85,8 @@ func (c *Cache) Add(e Entry) {
 	}
 
 	c.head = seen
+
+	if c.tail == nil {
+		c.tail = seen
+	}
 }
