@@ -9,52 +9,42 @@ import (
 type Entry interface {
 	Key() string
 	Size() uint64
-	Value() interface{}
 }
 
 type entry struct {
 	Entry
 
-	seen *internal.Seen
+	recurrer internal.Recurrer
 }
 
 type Cache struct {
 	entries map[string]entry
-	head    *internal.Seen
-	tail    *internal.Seen
+	history *internal.History
 
 	size, maxSize uint64
-}
-
-func (c Cache) String() string {
-	return fmt.Sprintf(
-		"\nsize: %d\nhead: %s\ntail: %s\n",
-		c.size,
-		c.head.Key(),
-		c.tail.Key(),
-	)
 }
 
 func NewCache(maxSize uint64) *Cache {
 	return &Cache{
 		entries: make(map[string]entry),
+		history: &internal.History{},
 		maxSize: maxSize,
 	}
 }
 
-func (c *Cache) Get(key string) (interface{}, bool) {
+func (c *Cache) Get(key string) (Entry, bool) {
+	if c == nil {
+		return nil, false
+	}
+
 	e, ok := c.entries[key]
 	if !ok {
 		return nil, false
 	}
 
-	c.head = c.head.SawAgain(e.seen)
+	e.recurrer.Recur()
 
-	if c.tail == e.seen {
-		c.tail = e.seen.After()
-	}
-
-	return e.Value(), true
+	return e.Entry, true
 }
 
 func (c *Cache) Add(e Entry) {
@@ -64,29 +54,32 @@ func (c *Cache) Add(e Entry) {
 
 	c.size += e.Size()
 
-	for c.size > c.maxSize && c.tail != nil {
-		tail := c.tail
-		c.tail = tail.After()
-
-		rm, ok := c.entries[tail.Key()]
+	for c.size > c.maxSize && !c.history.Empty() {
+		key := c.history.Forget()
+		rm, ok := c.entries[key]
 		if !ok {
 			continue
 		}
 
 		c.size -= rm.Size()
-		delete(c.entries, tail.Key())
+		delete(c.entries, key)
 	}
 
-	seen := c.head.Saw(e.Key())
+	recurrer := c.history.Track(e.Key())
 
 	c.entries[e.Key()] = entry{
-		Entry: e,
-		seen:  seen,
+		Entry:    e,
+		recurrer: recurrer,
 	}
+}
 
-	c.head = seen
+func (c Cache) String() string {
+	mru, lru := c.history.Bookends()
 
-	if c.tail == nil {
-		c.tail = seen
-	}
+	return fmt.Sprintf(
+		"\nsize: %d\nmru: %s\nlru: %s\n",
+		c.size,
+		mru,
+		lru,
+	)
 }
