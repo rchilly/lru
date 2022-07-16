@@ -60,3 +60,24 @@ func TestForget(t *testing.T) {
 	assert.Equal(t, "2", forgotten)
 	assert.DeepEqual(t, []string{"1", "3"}, h.LatestN(5))
 }
+
+func BenchmarkRecur(tb *testing.B) {
+	h := &History{}
+	a := h.Track("A")
+	b := h.Track("B")
+	c := h.Track("C")
+
+	// C B A
+	// B C A
+	// ...etc
+
+	tb.ResetTimer()
+
+	for n := 0; n < tb.N; n++ {
+		b.Recur()
+		c.Recur()
+	}
+
+	assert.Equal(tb, c.(recurrer).l, h.head)
+	assert.Equal(tb, a.(recurrer).l, h.tail)
+}
